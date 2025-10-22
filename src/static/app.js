@@ -4,14 +4,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // Inject styles for a prettier participants list (idempotent)
+  function ensureParticipantsStyles() {
+    if (document.getElementById("participants-styles")) return;
+    const style = document.createElement("style");
+    style.id = "participants-styles";
+    style.textContent = `
+      .participants { margin-top:8px; padding-top:8px; border-top:1px solid #eee; }
+      .participants-title { margin:0 0 6px 0; font-weight:600; font-size:13px; }
+      .participants-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+      .participant-item { display:flex; align-items:center; gap:10px; padding:4px; transition:background .12s ease;border-radius:6px; }
+      .participant-item:hover { background:#fbfbff; }
+      .participant-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#6dd5ed,#2193b0); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:600; font-size:13px; flex:0 0 32px; }
+      .participant-name { font-size:14px; color:#111; }
+      .participant-meta { font-size:12px; color:#666; margin-left:6px; }
+      .no-participants { font-style:italic; margin:4px 0; color:#666; }
+    `;
+    document.head.appendChild(style);
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
+    ensureParticipantsStyles();
     try {
       const response = await fetch("/activities");
       const activities = await response.json();
 
       // Clear loading message
       activitiesList.innerHTML = "";
+  // Clear activity select (keep the placeholder)
+  activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -20,12 +42,114 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-        `;
+        // Title
+        const title = document.createElement("h4");
+        title.textContent = name;
+        activityCard.appendChild(title);
+
+        // Description
+        const desc = document.createElement("p");
+        desc.textContent = details.description;
+        activityCard.appendChild(desc);
+
+        // Schedule
+        const scheduleP = document.createElement("p");
+        scheduleP.innerHTML = `<strong>Schedule:</strong> ${details.schedule}`;
+        activityCard.appendChild(scheduleP);
+
+        // Availability
+        const availP = document.createElement("p");
+        availP.innerHTML = `<strong>Availability:</strong> ${spotsLeft} spots left`;
+        activityCard.appendChild(availP);
+
+        // Participants section
+        const participantsContainer = document.createElement("div");
+        participantsContainer.className = "participants";
+
+        const participantsTitle = document.createElement("p");
+        participantsTitle.className = "participants-title";
+        participantsTitle.textContent = "Participants:";
+        participantsContainer.appendChild(participantsTitle);
+
+        if (Array.isArray(details.participants) && details.participants.length > 0) {
+          const ul = document.createElement("ul");
+          ul.className = "participants-list";
+
+          details.participants.forEach((p) => {
+            const li = document.createElement("li");
+            li.className = "participant-item";
+
+            // Derive a friendly display name and meta (domain) if email-like
+            let display = p;
+            let meta = "";
+            if (typeof p === "string" && p.includes("@")) {
+              const [local, domain] = p.split("@");
+              display = local;
+              meta = domain;
+            }
+
+            // Avatar with initials
+            const avatar = document.createElement("span");
+            avatar.className = "participant-avatar";
+            const parts = String(display).replace(/[._-]/g, " ").split(/\s+/).filter(Boolean);
+            const initials = (parts[0]?.[0] || "").toUpperCase() + (parts[1]?.[0] || "");
+            avatar.textContent = initials || display[0]?.toUpperCase() || "?";
+
+          // Delete icon
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className = "delete-participant-btn";
+          deleteBtn.title = "Remove participant";
+          deleteBtn.innerHTML = "&#128465;"; // Trash can icon
+          deleteBtn.style.background = "none";
+          deleteBtn.style.border = "none";
+          deleteBtn.style.cursor = "pointer";
+          deleteBtn.style.fontSize = "16px";
+          deleteBtn.style.marginLeft = "8px";
+          deleteBtn.setAttribute("aria-label", `Remove ${display}`);
+          deleteBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (!confirm(`Remove ${p} from ${name}?`)) return;
+            try {
+              const response = await fetch(`/activities/${encodeURIComponent(name)}/unregister?email=${encodeURIComponent(p)}`, {
+                method: "POST",
+              });
+              const result = await response.json();
+              if (response.ok) {
+                await fetchActivities();
+              } else {
+                alert(result.detail || "Failed to remove participant.");
+              }
+            } catch (err) {
+              alert("Error removing participant.");
+            }
+          });
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "participant-name";
+            nameSpan.textContent = display;
+
+            li.appendChild(avatar);
+            li.appendChild(nameSpan);
+
+            if (meta) {
+              const metaSpan = document.createElement("span");
+          li.appendChild(deleteBtn);
+              metaSpan.className = "participant-meta";
+              metaSpan.textContent = `· ${meta}`;
+              li.appendChild(metaSpan);
+            }
+
+            ul.appendChild(li);
+          });
+
+          participantsContainer.appendChild(ul);
+        } else {
+          const none = document.createElement("p");
+          none.className = "no-participants";
+          none.textContent = "No participants yet — be the first!";
+          participantsContainer.appendChild(none);
+        }
+
+        activityCard.appendChild(participantsContainer);
 
         activitiesList.appendChild(activityCard);
 
@@ -62,6 +186,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities so the new participant appears without a full page reload
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
