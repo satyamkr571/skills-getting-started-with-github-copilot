@@ -32,6 +32,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+  // Clear activity select (keep the placeholder)
+  activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -93,6 +95,34 @@ document.addEventListener("DOMContentLoaded", () => {
             const initials = (parts[0]?.[0] || "").toUpperCase() + (parts[1]?.[0] || "");
             avatar.textContent = initials || display[0]?.toUpperCase() || "?";
 
+          // Delete icon
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className = "delete-participant-btn";
+          deleteBtn.title = "Remove participant";
+          deleteBtn.innerHTML = "&#128465;"; // Trash can icon
+          deleteBtn.style.background = "none";
+          deleteBtn.style.border = "none";
+          deleteBtn.style.cursor = "pointer";
+          deleteBtn.style.fontSize = "16px";
+          deleteBtn.style.marginLeft = "8px";
+          deleteBtn.setAttribute("aria-label", `Remove ${display}`);
+          deleteBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (!confirm(`Remove ${p} from ${name}?`)) return;
+            try {
+              const response = await fetch(`/activities/${encodeURIComponent(name)}/unregister?email=${encodeURIComponent(p)}`, {
+                method: "POST",
+              });
+              const result = await response.json();
+              if (response.ok) {
+                await fetchActivities();
+              } else {
+                alert(result.detail || "Failed to remove participant.");
+              }
+            } catch (err) {
+              alert("Error removing participant.");
+            }
+          });
             const nameSpan = document.createElement("span");
             nameSpan.className = "participant-name";
             nameSpan.textContent = display;
@@ -102,6 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (meta) {
               const metaSpan = document.createElement("span");
+          li.appendChild(deleteBtn);
               metaSpan.className = "participant-meta";
               metaSpan.textContent = `· ${meta}`;
               li.appendChild(metaSpan);
@@ -155,6 +186,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities so the new participant appears without a full page reload
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
