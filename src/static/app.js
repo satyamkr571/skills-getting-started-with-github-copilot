@@ -4,8 +4,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // Inject styles for a prettier participants list (idempotent)
+  function ensureParticipantsStyles() {
+    if (document.getElementById("participants-styles")) return;
+    const style = document.createElement("style");
+    style.id = "participants-styles";
+    style.textContent = `
+      .participants { margin-top:8px; padding-top:8px; border-top:1px solid #eee; }
+      .participants-title { margin:0 0 6px 0; font-weight:600; font-size:13px; }
+      .participants-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+      .participant-item { display:flex; align-items:center; gap:10px; padding:4px; transition:background .12s ease;border-radius:6px; }
+      .participant-item:hover { background:#fbfbff; }
+      .participant-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#6dd5ed,#2193b0); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:600; font-size:13px; flex:0 0 32px; }
+      .participant-name { font-size:14px; color:#111; }
+      .participant-meta { font-size:12px; color:#666; margin-left:6px; }
+      .no-participants { font-style:italic; margin:4px 0; color:#666; }
+    `;
+    document.head.appendChild(style);
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
+    ensureParticipantsStyles();
     try {
       const response = await fetch("/activities");
       const activities = await response.json();
@@ -43,34 +63,58 @@ document.addEventListener("DOMContentLoaded", () => {
         // Participants section
         const participantsContainer = document.createElement("div");
         participantsContainer.className = "participants";
-        // subtle separator and spacing to make it look tidy
-        participantsContainer.style.marginTop = "8px";
-        participantsContainer.style.paddingTop = "8px";
-        participantsContainer.style.borderTop = "1px solid #eee";
 
         const participantsTitle = document.createElement("p");
-        participantsTitle.innerHTML = "<strong>Participants:</strong>";
+        participantsTitle.className = "participants-title";
+        participantsTitle.textContent = "Participants:";
         participantsContainer.appendChild(participantsTitle);
 
         if (Array.isArray(details.participants) && details.participants.length > 0) {
           const ul = document.createElement("ul");
           ul.className = "participants-list";
-          ul.style.listStyle = "disc";
-          ul.style.marginLeft = "1.2em";
-          ul.style.padding = "0";
+
           details.participants.forEach((p) => {
             const li = document.createElement("li");
-            li.textContent = p;
-            li.style.padding = "2px 0";
+            li.className = "participant-item";
+
+            // Derive a friendly display name and meta (domain) if email-like
+            let display = p;
+            let meta = "";
+            if (typeof p === "string" && p.includes("@")) {
+              const [local, domain] = p.split("@");
+              display = local;
+              meta = domain;
+            }
+
+            // Avatar with initials
+            const avatar = document.createElement("span");
+            avatar.className = "participant-avatar";
+            const parts = String(display).replace(/[._-]/g, " ").split(/\s+/).filter(Boolean);
+            const initials = (parts[0]?.[0] || "").toUpperCase() + (parts[1]?.[0] || "");
+            avatar.textContent = initials || display[0]?.toUpperCase() || "?";
+
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "participant-name";
+            nameSpan.textContent = display;
+
+            li.appendChild(avatar);
+            li.appendChild(nameSpan);
+
+            if (meta) {
+              const metaSpan = document.createElement("span");
+              metaSpan.className = "participant-meta";
+              metaSpan.textContent = `· ${meta}`;
+              li.appendChild(metaSpan);
+            }
+
             ul.appendChild(li);
           });
+
           participantsContainer.appendChild(ul);
         } else {
           const none = document.createElement("p");
           none.className = "no-participants";
           none.textContent = "No participants yet — be the first!";
-          none.style.fontStyle = "italic";
-          none.style.margin = "4px 0";
           participantsContainer.appendChild(none);
         }
 
